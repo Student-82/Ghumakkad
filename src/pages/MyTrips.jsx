@@ -1,4 +1,5 @@
-// FILE: src/pages/MyTrips.jsx (UPDATED FOR RESPONSIVENESS)
+// FILE: src/pages/MyTrips.jsx (FINAL VERSION)
+// This version re-enables the TripDetail view.
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
@@ -57,7 +58,7 @@ export default function MyTrips({ session }) {
     const [trips, setTrips] = useState([]);
     const [error, setError] = useState(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
-    const [selectedTrip, setSelectedTrip] = useState(null);
+    const [selectedTrip, setSelectedTrip] = useState(null); // Re-enabled
 
     const fetchTrips = async () => {
         setLoading(true);
@@ -77,6 +78,7 @@ export default function MyTrips({ session }) {
         fetchTrips();
     }, []);
 
+    // Re-enabled clicking into a trip
     if (selectedTrip) {
         return <TripDetail trip={selectedTrip} session={session} onBack={() => setSelectedTrip(null)} />;
     }
@@ -98,6 +100,7 @@ export default function MyTrips({ session }) {
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {trips.map(trip => (
+                        // Re-enabled the onClick handler
                         <div key={trip.id} onClick={() => setSelectedTrip(trip)} className="bg-gray-50 rounded-lg p-6 transform hover:-translate-y-1 hover:shadow-xl transition-all duration-300 cursor-pointer border border-gray-200">
                             <h3 className="text-xl font-bold text-[#073B4C] truncate">{trip.title}</h3>
                             <p className="text-gray-500 mb-4">{trip.destination}</p>
