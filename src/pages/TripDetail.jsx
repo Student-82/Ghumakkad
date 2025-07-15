@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-const AddItineraryItemForm = ({ trip, session }) => {
+const AddItineraryItemForm = ({ trip, session, onItemAdded }) => {
     const [title, setTitle] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -11,8 +11,15 @@ const AddItineraryItemForm = ({ trip, session }) => {
         e.preventDefault();
         if (!title.trim()) return;
         setLoading(true);
-        // The insert itself is fine. The subscription will handle the update.
-        await supabase.from('itinerary_items').insert({ trip_id: trip.id, user_id: session.user.id, title: title });
+        const { data, error } = await supabase
+            .from('itinerary_items')
+            .insert({ trip_id: trip.id, user_id: session.user.id, title: title })
+            .select()
+            .single();
+        
+        if (!error) {
+            onItemAdded(data); // Call the callback to update the parent state
+        }
         setTitle('');
         setLoading(false);
     };
@@ -25,7 +32,7 @@ const AddItineraryItemForm = ({ trip, session }) => {
     );
 };
 
-const AddExpenseForm = ({ trip, session }) => {
+const AddExpenseForm = ({ trip, session, onExpenseAdded }) => {
     const [description, setDescription] = useState('');
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
@@ -34,7 +41,15 @@ const AddExpenseForm = ({ trip, session }) => {
         e.preventDefault();
         if (!description.trim() || !amount) return;
         setLoading(true);
-        await supabase.from('expenses').insert({ trip_id: trip.id, paid_by_user_id: session.user.id, description: description, amount: parseFloat(amount) });
+        const { data, error } = await supabase
+            .from('expenses')
+            .insert({ trip_id: trip.id, paid_by_user_id: session.user.id, description: description, amount: parseFloat(amount) })
+            .select()
+            .single();
+
+        if (!error) {
+            onExpenseAdded(data); // Call the callback to update the parent state
+        }
         setDescription('');
         setAmount('');
         setLoading(false);
@@ -57,54 +72,39 @@ export default function TripDetail({ trip, session, onBack }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // This function will now be our single source of truth for fetching data.
-    const fetchTripDetails = async () => {
-        try {
-            const { data: membersData, error: membersError } = await supabase.from('trip_members').select('user_id').eq('trip_id', trip.id);
-            if (membersError) throw membersError;
-            const memberIds = membersData.map(m => m.user_id);
-
-            const { data: profilesData, error: profilesError } = await supabase.from('profiles').select('id, email').in('id', memberIds);
-            if (profilesError) throw profilesError;
-            const profilesMap = profilesData.reduce((acc, profile) => { acc[profile.id] = profile.email; return acc; }, {});
-            setProfiles(profilesMap);
-
-            const itineraryPromise = supabase.from('itinerary_items').select('*').eq('trip_id', trip.id).order('created_at', { ascending: true });
-            const expensesPromise = supabase.from('expenses').select('*').eq('trip_id', trip.id).order('created_at', { ascending: false });
-            
-            const [{ data: itineraryData, error: itineraryError }, { data: expensesData, error: expensesError }] = await Promise.all([itineraryPromise, expensesPromise]);
-            if (itineraryError) throw itineraryError;
-            if (expensesError) throw expensesError;
-
-            setItineraryItems(itineraryData);
-            setExpenses(expensesData);
-        } catch (error) {
-            setError(error.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     useEffect(() => {
-        // Fetch initial data when the component mounts
-        fetchTripDetails();
+        const fetchTripDetails = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const { data: membersData, error: membersError } = await supabase
+                    .from('trip_members').select('user_id').eq('trip_id', trip.id);
+                if (membersError) throw membersError;
+                const memberIds = membersData.map(m => m.user_id);
 
-        // Set up the real-time subscription.
-        // When a new item is inserted, we don't use the payload.
-        // We just call our fetchTripDetails function again to get the latest data.
-        const subscription = supabase.channel(`trip_updates_for_${trip.id}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'itinerary_items', filter: `trip_id=eq.${trip.id}` }, () => {
-                fetchTripDetails();
-            })
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'expenses', filter: `trip_id=eq.${trip.id}` }, () => {
-                fetchTripDetails();
-            })
-            .subscribe();
+                const { data: profilesData, error: profilesError } = await supabase
+                    .from('profiles').select('id, email').in('id', memberIds);
+                if (profilesError) throw profilesError;
+                const profilesMap = profilesData.reduce((acc, profile) => { acc[profile.id] = profile.email; return acc; }, {});
+                setProfiles(profilesMap);
 
-        // Cleanup function to remove the subscription
-        return () => {
-            supabase.removeChannel(subscription);
+                const itineraryPromise = supabase.from('itinerary_items').select('*').eq('trip_id', trip.id).order('created_at', { ascending: true });
+                const expensesPromise = supabase.from('expenses').select('*').eq('trip_id', trip.id).order('created_at', { ascending: false });
+                
+                const [{ data: itineraryData, error: itineraryError }, { data: expensesData, error: expensesError }] = await Promise.all([itineraryPromise, expensesPromise]);
+                if (itineraryError) throw itineraryError;
+                if (expensesError) throw expensesError;
+
+                setItineraryItems(itineraryData);
+                setExpenses(expensesData);
+            } catch (error) {
+                setError(error.message);
+            } finally {
+                setLoading(false);
+            }
         };
+
+        fetchTripDetails();
     }, [trip.id]);
 
     const totalExpenses = expenses.reduce((total, expense) => total + expense.amount, 0);
@@ -127,7 +127,7 @@ export default function TripDetail({ trip, session, onBack }) {
                 <div className="bg-gray-50 p-4 md:p-6 rounded-lg">
                     <h3 className="text-xl font-bold text-[#073B4C] mb-4">Itinerary</h3>
                     {itineraryItems.length === 0 ? (<p className="text-gray-500">No itinerary items added yet.</p>) : (<ul className="space-y-3">{itineraryItems.map(item => (<li key={item.id} className="bg-white p-3 rounded-md shadow-sm flex items-center"><span className="w-2 h-2 bg-[#118AB2] rounded-full mr-3"></span>{item.title}</li>))}</ul>)}
-                    <AddItineraryItemForm trip={trip} session={session} />
+                    <AddItineraryItemForm trip={trip} session={session} onItemAdded={(newItem) => setItineraryItems([...itineraryItems, newItem])} />
                 </div>
                 <div className="bg-gray-50 p-4 md:p-6 rounded-lg">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
@@ -135,7 +135,7 @@ export default function TripDetail({ trip, session, onBack }) {
                         <span className="text-lg font-bold text-green-600">Total: ₹{totalExpenses.toFixed(2)}</span>
                     </div>
                     {expenses.length === 0 ? (<p className="text-gray-500">No expenses tracked yet.</p>) : (<ul className="space-y-3">{expenses.map(expense => (<li key={expense.id} className="bg-white p-3 rounded-md shadow-sm flex justify-between"><div className="truncate pr-2"><p className="font-semibold truncate">{expense.description}</p><p className="text-xs text-gray-500">Paid by: {profiles[expense.paid_by_user_id] || '...'}</p></div><span className="font-bold whitespace-nowrap">₹{expense.amount}</span></li>))}</ul>)}
-                    <AddExpenseForm trip={trip} session={session} />
+                    <AddExpenseForm trip={trip} session={session} onExpenseAdded={(newExpense) => setExpenses([newExpense, ...expenses])} />
                 </div>
             </div>
         </div>
