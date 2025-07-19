@@ -8,13 +8,13 @@ const Spinner = () => (
 );
 
 const ItineraryDisplay = ({ blueprint, createTripFromBlueprint, creating }) => (
-    <div className="mt-6 bg-white/50 p-4 sm:p-6 rounded-xl shadow-inner">
-        <h3 className="text-xl sm:text-2xl font-bold text-indigo-700 mb-4">{blueprint.title}</h3>
+    <div className="mt-6 bg-white/50 p-6 rounded-xl shadow-inner">
+        <h3 className="text-2xl font-bold text-indigo-700 mb-4">{blueprint.title}</h3>
         <div className="space-y-4">
             {blueprint.itinerary.map((day, index) => (
                 <div key={index}>
                     <h4 className="font-bold text-lg text-gray-800 border-b-2 border-indigo-200 pb-1 mb-2">Day {day.day}: {day.theme}</h4>
-                    <ul className="list-disc list-inside space-y-1 text-gray-700 text-sm sm:text-base">
+                    <ul className="list-disc list-inside space-y-1 text-gray-700">
                         {day.activities.map((activity, actIndex) => (
                             <li key={actIndex}>{activity}</li>
                         ))}
@@ -53,10 +53,11 @@ const Blueprints = () => {
         const prompt = `Create a detailed travel itinerary based on this request: "${query}". The destination should be in India. The output must be a structured plan. Include a main title for the trip and a day-by-day breakdown. For each day, provide a theme and a list of activities.`;
 
         try {
-            const apiKey = "AIzaSyAv7H9ap5FU68gKbXQkT6jB0ASiENn9lQw";
+            // This line reads the key from Vercel's environment variables
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-            if (apiKey === "AIzaSyAv7H9ap5FU68gKbXQkT6jB0ASiENn9lQw" || !apiKey) {
-                 setError("API Key not found. Please add your key from Google AI Studio to test this feature.");
+            if (!apiKey) {
+                 setError("API Key not found. Please ensure it is set correctly in your deployment settings.");
                  setLoading(false);
                  return;
             }

@@ -39,10 +39,11 @@ const Deals = () => {
         const prompt = `Based on publicly available information, find student deals related to the following query: "${query}". For each deal, provide the brand, title, a brief description, and a direct URL to the deal or company website. Focus on deals available in India.`;
 
         try {
-            const apiKey = "AIzaSyAv7H9ap5FU68gKbXQkT6jB0ASiENn9lQw"; 
+            // This line reads the key from Vercel's environment variables
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-            if (apiKey === "AIzaSyAv7H9ap5FU68gKbXQkT6jB0ASiENn9lQw" || !apiKey) {
-                 setError("API Key not found. Please add your key from Google AI Studio to test this feature.");
+            if (!apiKey) {
+                 setError("API Key not found. Please ensure it is set correctly in your deployment settings.");
                  setLoading(false);
                  return;
             }
