@@ -3,8 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './supabaseClient'; // Make sure this path is correct
 
 import Login from './pages/Login.jsx';
-// FIXED: Changed SignUp.jsx to Signup.jsx to match potential filename case sensitivity issues on deployment.
-// Please ensure your file in src/pages/ is named exactly "Signup.jsx"
+// FIXED: Changed SignUp.jsx to Signup.jsx to match the actual filename
 import SignUp from './pages/Signup.jsx'; 
 import Dashboard from './pages/Dashboard.jsx';
 
