@@ -320,6 +320,7 @@ const TripDetail = ({ tripId, setView, userId }) => {
                         <p className="text-4xl font-bold text-green-600">₹{totalPledged}</p>
                         <p className="text-sm text-gray-600">{pledgedUserIds.length} of {trip.members.length} members have pledged.</p>
                     </div>
+                    {/* FIXED: Re-added the Member List UI */}
                     <div>
                         <p className="text-sm font-bold text-gray-500 mb-2">MEMBERS</p>
                         <ul className="space-y-2">
@@ -471,7 +472,6 @@ const TripDetail = ({ tripId, setView, userId }) => {
 };
 
 const SettlementCalculator = ({ expenses, pledgedUserIds, memberProfiles, tripName }) => {
-    // ... (This component remains the same)
     const settlement = useMemo(() => {
         const balances = {};
         const participatingMembers = memberProfiles.filter(p => pledgedUserIds.includes(p.id));
