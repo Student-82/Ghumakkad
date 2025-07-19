@@ -320,20 +320,26 @@ const TripDetail = ({ tripId, setView, userId }) => {
                         <p className="text-4xl font-bold text-green-600">₹{totalPledged}</p>
                         <p className="text-sm text-gray-600">{pledgedUserIds.length} of {trip.members.length} members have pledged.</p>
                     </div>
-                    {/* FIXED: Re-added the Member List UI */}
+                    {/* FIXED: New resilient member list logic */}
                     <div>
                         <p className="text-sm font-bold text-gray-500 mb-2">MEMBERS</p>
                         <ul className="space-y-2">
-                            {memberProfiles.map(profile => (
-                                <li key={profile.id} className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-700">{profile.email}</span>
-                                    {pledgedUserIds.includes(profile.id) ? (
-                                        <span className="flex items-center gap-1 text-green-600 font-bold">✅ Pledged</span>
-                                    ) : (
-                                        <span className="flex items-center gap-1 text-yellow-600 font-bold">⌛ Pending</span>
-                                    )}
-                                </li>
-                            ))}
+                            {trip.members.map(memberId => {
+                                const profile = memberProfiles.find(p => p.id === memberId);
+                                const email = profile ? profile.email : `[User ID: ${memberId.slice(0,8)}...]`;
+                                const hasPledged = pledgedUserIds.includes(memberId);
+
+                                return (
+                                    <li key={memberId} className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-700">{email}</span>
+                                        {hasPledged ? (
+                                            <span className="flex items-center gap-1 text-green-600 font-bold">✅ Pledged</span>
+                                        ) : (
+                                            <span className="flex items-center gap-1 text-yellow-600 font-bold">⌛ Pending</span>
+                                        )}
+                                    </li>
+                                );
+                            })}
                         </ul>
                     </div>
                 </div>
@@ -684,7 +690,7 @@ const ExpenseForm = ({ onSubmit }) => {
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700">Attach Bill (Optional)</label>
+                <label className="block text-sm font-medium text-gray-.700">Attach Bill (Optional)</label>
                 <input 
                     type="file"
                     onChange={handleFileChange}
