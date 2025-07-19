@@ -244,9 +244,22 @@ const TripDetail = ({ tripId, setView, userId }) => {
     const handlePledge = async () => {
         setIsPledging(true);
         const newMembers = [...trip.members, userId];
+        
         const { error: memberError } = await supabase.from('trips').update({ members: newMembers }).eq('id', tripId);
+        
+        if (memberError) {
+            alert(`Error joining trip: ${memberError.message}`);
+            setIsPledging(false);
+            return;
+        }
+
         const { error: transactionError } = await supabase.from('trip_wallet_transactions').insert({ trip_id: tripId, user_id: userId, transaction_type: 'pledge', amount: trip.pact_amount });
-        if(memberError || transactionError) console.error("Pledge Error:", memberError || transactionError);
+
+        if (transactionError) {
+            alert(`Error adding pledge: ${transactionError.message}`);
+        } else {
+            alert("Success! You have joined the trip.");
+        }
         setIsPledging(false);
     };
 
@@ -320,13 +333,12 @@ const TripDetail = ({ tripId, setView, userId }) => {
                         <p className="text-4xl font-bold text-green-600">₹{totalPledged}</p>
                         <p className="text-sm text-gray-600">{pledgedUserIds.length} of {trip.members.length} members have pledged.</p>
                     </div>
-                    {/* FIXED: New resilient member list logic */}
                     <div>
                         <p className="text-sm font-bold text-gray-500 mb-2">MEMBERS</p>
                         <ul className="space-y-2">
                             {trip.members.map(memberId => {
                                 const profile = memberProfiles.find(p => p.id === memberId);
-                                const email = profile ? profile.email : `[User ID: ${memberId.slice(0,8)}...]`;
+                                const email = profile ? profile.email : `User...${memberId.slice(-6)}`;
                                 const hasPledged = pledgedUserIds.includes(memberId);
 
                                 return (
@@ -690,7 +702,7 @@ const ExpenseForm = ({ onSubmit }) => {
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-.700">Attach Bill (Optional)</label>
+                <label className="block text-sm font-medium text-gray-700">Attach Bill (Optional)</label>
                 <input 
                     type="file"
                     onChange={handleFileChange}
