@@ -1,80 +1,102 @@
-import React, { useState } from 'react'
-import { supabase } from '../supabaseClient'
+import React, { useState } from 'react';
+import { supabase } from '../supabaseClient'; // Make sure this path is correct
+import { Link } from 'react-router-dom';
 
-export default function Signup({ goBack }) {
-  const [loading, setLoading] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState(null)
+const SignUp = () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [message, setMessage] = useState('');
 
+    const handleSignUp = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        setMessage('');
 
-  const handleSignup = async (event) => {
-    event.preventDefault()
-    setLoading(true)
-    setError(null)
-    setMessage('')
-    const { error } = await supabase.auth.signUp({ email, password })
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+        });
 
-    if (error) {
-      setError(error.message)
-    } else {
-      setMessage('Success! Please check your email for a confirmation link.')
-    }
-    setLoading(false)
-  }
+        if (error) {
+            setError(error.message);
+        } else if (data.user && data.user.identities && data.user.identities.length === 0) {
+            setError("A user with this email address already exists.");
+        } else if (data.user) {
+            setMessage("Success! Please check your email to confirm your account.");
+        }
+        setLoading(false);
+    };
 
-  return (
-    <div className="flex justify-center items-center min-h-screen bg-gray-100">
-      <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-lg">
-        <h1 className="text-3xl font-bold text-center text-[#073B4C]">Create Your Account</h1>
-        <p className="text-center text-gray-500">Join the community of student travelers!</p>
-        
-        {error && <p className="text-red-500 text-center">{error}</p>}
-        {message && <p className="text-green-500 text-center">{message}</p>}
+    return (
+        <div className="hero-mountains-background px-4">
+            <div className="w-full max-w-md p-6 sm:p-8 space-y-6 sm:space-y-8 bg-white/20 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20">
+                <div className="text-center">
+                    <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">Create Your Account</h1>
+                    <p className="mt-2 text-gray-600">Start your next adventure with Ghumakkad.</p>
+                </div>
 
-        <form onSubmit={handleSignup} className="space-y-6">
-          <div>
-            <label htmlFor="email">Email address</label>
-            <input
-              id="email"
-              className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:ring-[#06D6A0] focus:border-[#06D6A0]"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              required
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div>
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:ring-[#06D6A0] focus:border-[#06D6A0]"
-              type="password"
-              placeholder="Create a strong password"
-              value={password}
-              required
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <div>
-            <button 
-              type="submit"
-              className="w-full py-3 px-4 bg-[#06D6A0] text-white font-bold rounded-md hover:bg-[#05b386] transition shadow-lg disabled:opacity-50"
-              disabled={loading}
-            >
-              {loading ? <span>Creating Account...</span> : <span>Sign Up</span>}
-            </button>
-          </div>
-        </form>
-         <p className="text-center text-sm text-gray-600">
-          Already have an account?{' '}
-          <button onClick={goBack} className="font-medium text-[#118AB2] hover:underline">
-            Log In
-          </button>
-        </p>
-      </div>
-    </div>
-  )
-}
+                <form onSubmit={handleSignUp} className="space-y-6">
+                    <div>
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email address</label>
+                        <div className="mt-1">
+                            <input
+                                id="email"
+                                name="email"
+                                type="email"
+                                autoComplete="email"
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full px-4 py-3 bg-white/50 border border-white/30 rounded-lg shadow-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                placeholder="you@example.com"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+                        <div className="mt-1">
+                            <input
+                                id="password"
+                                name="password"
+                                type="password"
+                                autoComplete="new-password"
+                                required
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="w-full px-4 py-3 bg-white/50 border border-white/30 rounded-lg shadow-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                placeholder="••••••••"
+                            />
+                        </div>
+                    </div>
+
+                    {message && <p className="text-center text-sm text-green-800 bg-green-100 p-3 rounded-lg">{message}</p>}
+                    
+                    {error && <p className="text-center text-sm text-red-600 bg-red-100 p-3 rounded-lg">{error}</p>}
+
+                    <div>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-lg text-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-all duration-300"
+                        >
+                            {loading ? 'Creating Account...' : 'Sign Up'}
+                        </button>
+                    </div>
+                </form>
+
+                <p className="mt-6 text-center text-md text-gray-600">
+                    Already have an account?{' '}
+                    <Link to="/login" className="font-bold text-indigo-700 hover:text-indigo-800">
+                        Log In
+                    </Link>
+                </p>
+            </div>
+        </div>
+    );
+};
+
+export default SignUp;

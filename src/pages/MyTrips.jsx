@@ -1,121 +1,816 @@
-// FILE: src/pages/MyTrips.jsx (FINAL VERSION)
-// This version re-enables the TripDetail view.
+import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../supabaseClient'; // Make sure this path is correct
 
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
-import TripDetail from './TripDetail.jsx';
+// --- Helper Components ---
 
-const CreateTripForm = ({ onTripCreated, onCancel }) => {
-  const [loading, setLoading] = useState(false);
-  const [title, setTitle] = useState('');
-  const [destination, setDestination] = useState('');
-  const [error, setError] = useState(null);
-
-  const handleCreateTrip = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      const { data, error } = await supabase.rpc('create_new_trip', {
-        p_title: title,
-        p_destination: destination,
-      });
-      if (error) throw error;
-      onTripCreated();
-    } catch (error) {
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-      <div className="bg-white p-6 md:p-8 rounded-lg shadow-2xl w-full max-w-md">
-        <h2 className="text-2xl font-bold text-[#073B4C] mb-6">Plan a New Adventure</h2>
-        {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">{error}</p>}
-        <form onSubmit={handleCreateTrip} className="space-y-4">
-          <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-700">Trip Name</label>
-            <input id="title" type="text" className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., Spiti Valley Expedition" value={title} onChange={(e) => setTitle(e.target.value)} required />
-          </div>
-          <div>
-            <label htmlFor="destination" className="block text-sm font-medium text-gray-700">Destination</label>
-            <input id="destination" type="text" className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm" placeholder="e.g., Himachal Pradesh" value={destination} onChange={(e) => setDestination(e.target.value)} />
-          </div>
-          <div className="flex justify-end gap-4 pt-4">
-            <button type="button" onClick={onCancel} className="bg-gray-200 text-gray-800 font-bold py-2 px-6 rounded-full hover:bg-gray-300 transition">Cancel</button>
-            <button type="submit" className="bg-[#06D6A0] text-white font-bold py-2 px-6 rounded-full hover:bg-[#05b386] transition" disabled={loading}>{loading ? 'Creating...' : 'Create Trip'}</button>
-          </div>
-        </form>
-      </div>
+const Modal = ({ children, onClose }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+        <div className="bg-white rounded-lg shadow-xl p-8 m-4 max-w-lg w-full relative">
+            <button onClick={onClose} className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 text-2xl font-bold">&times;</button>
+            {children}
+        </div>
     </div>
-  );
-};
+);
 
-export default function MyTrips({ session }) {
-    const [loading, setLoading] = useState(true);
+const Spinner = () => (
+    <div className="flex justify-center items-center p-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+    </div>
+);
+
+
+// --- Main Feature Components ---
+
+const TripList = ({ setView, setSelectedTripId, userId }) => {
     const [trips, setTrips] = useState([]);
-    const [error, setError] = useState(null);
-    const [showCreateForm, setShowCreateForm] = useState(false);
-    const [selectedTrip, setSelectedTrip] = useState(null); // Re-enabled
+    const [loading, setLoading] = useState(true);
+    const [joinId, setJoinId] = useState('');
+    const [joinError, setJoinError] = useState('');
 
-    const fetchTrips = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const { data, error } = await supabase.from('trips').select(`id, title, destination, trip_members(user_id)`);
-            if (error) throw error;
-            setTrips(data);
-        } catch (error) {
-            setError(error.message);
-        } finally {
+    useEffect(() => {
+        if (!userId) return;
+
+        const fetchTrips = async () => {
+            setLoading(true);
+            const { data, error } = await supabase
+                .from('trips')
+                .select('*')
+                .contains('members', [userId]); 
+
+            if (error) {
+                console.error("Error fetching trips: ", error);
+            } else {
+                setTrips(data || []);
+            }
             setLoading(false);
+        };
+
+        fetchTrips();
+
+        const subscription = supabase
+            .channel('public:trips')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, () => {
+                fetchTrips();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(subscription);
+        };
+    }, [userId]);
+
+    const handleSelectTrip = (tripId) => {
+        setSelectedTripId(tripId);
+        setView('tripDetail');
+    };
+    
+    const handleJoinTrip = async (e) => {
+        e.preventDefault();
+        setJoinError('');
+        if (!joinId.trim()) return;
+
+        const { data, error } = await supabase
+            .from('trips')
+            .select('id')
+            .eq('id', joinId.trim())
+            .single();
+
+        if (error || !data) {
+            setJoinError('Invalid Trip ID. Please check the ID and try again.');
+        } else {
+            setSelectedTripId(data.id);
+            setView('tripDetail');
         }
     };
 
-    useEffect(() => {
-        fetchTrips();
-    }, []);
-
-    // Re-enabled clicking into a trip
-    if (selectedTrip) {
-        return <TripDetail trip={selectedTrip} session={session} onBack={() => setSelectedTrip(null)} />;
-    }
-
-    if (loading) return <p className="text-center text-gray-500">Loading your trips...</p>;
-    if (error) return <p className="text-center text-red-500">Error: {error}</p>;
-
     return (
-        <div className="bg-white p-6 md:p-8 rounded-lg shadow-lg">
-            <div className="flex flex-col md:flex-row justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-[#073B4C] mb-4 md:mb-0">My Trips</h2>
-                <button onClick={() => setShowCreateForm(true)} className="bg-[#118AB2] text-white font-bold py-2 px-6 rounded-full hover:bg-[#0e7694] transition shadow-lg w-full md:w-auto">+ Create New Trip</button>
+        <div className="bg-white/80 backdrop-blur-md p-4 md:p-8 rounded-lg shadow-lg">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-800">My Trips</h2>
+                <form onSubmit={handleJoinTrip} className="flex flex-col sm:flex-row w-full md:w-auto gap-2">
+                    <input 
+                        type="text" 
+                        value={joinId}
+                        onChange={(e) => setJoinId(e.target.value)}
+                        placeholder="Paste Trip ID to Join"
+                        className="flex-grow px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                    />
+                    <button type="submit" className="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 text-sm">Join</button>
+                </form>
+                <button onClick={() => setView('createTrip')} className="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 shadow-md w-full md:w-auto">
+                    + Create Trip
+                </button>
             </div>
-
-            {trips.length === 0 ? (
-                <div className="text-center border-2 border-dashed border-gray-300 p-8 rounded-lg">
-                    <p className="text-gray-500">You haven't planned any trips yet. Start your next adventure!</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {trips.map(trip => (
-                        // Re-enabled the onClick handler
-                        <div key={trip.id} onClick={() => setSelectedTrip(trip)} className="bg-gray-50 rounded-lg p-6 transform hover:-translate-y-1 hover:shadow-xl transition-all duration-300 cursor-pointer border border-gray-200">
-                            <h3 className="text-xl font-bold text-[#073B4C] truncate">{trip.title}</h3>
-                            <p className="text-gray-500 mb-4">{trip.destination}</p>
-                            <div className="flex items-center text-gray-600">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" /></svg>
-                                <span>{trip.trip_members.length} Member(s)</span>
-                            </div>
+             {joinError && <p className="text-center text-sm text-red-600 bg-red-100 p-2 rounded-lg mb-4">{joinError}</p>}
+            {loading ? <Spinner /> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {trips.length > 0 ? trips.map(trip => (
+                        <div key={trip.id} onClick={() => handleSelectTrip(trip.id)} className="bg-white p-6 rounded-xl shadow-lg cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                            <h3 className="text-xl font-bold text-gray-900">{trip.title}</h3>
+                            <p className="text-gray-600">{trip.destination}</p>
+                            {trip.pact_amount && (
+                                <div className="mt-4 pt-4 border-t border-gray-200">
+                                    <p className="text-sm font-bold text-indigo-600">Pact: ₹{trip.pact_amount}</p>
+                                </div>
+                            )}
                         </div>
-                    ))}
+                    )) : (
+                        <div className="col-span-full text-center py-12 bg-gray-50/50 rounded-lg">
+                            <p className="text-gray-500">You have no trips yet. Create or join one to get started!</p>
+                        </div>
+                    )}
                 </div>
-            )}
-            
-            {showCreateForm && (
-                <CreateTripForm onCancel={() => setShowCreateForm(false)} onTripCreated={() => { setShowCreateForm(false); fetchTrips(); }} />
             )}
         </div>
     );
+};
+
+const CreateTrip = ({ setView, userId }) => {
+    const [title, setTitle] = useState('');
+    const [destination, setDestination] = useState('');
+    const [pactAmount, setPactAmount] = useState('');
+    const [isCreating, setIsCreating] = useState(false);
+
+    const handleCreateTrip = async (e) => {
+        e.preventDefault();
+        if (!title.trim() || !destination.trim() || !userId) return;
+
+        setIsCreating(true);
+        const { error } = await supabase
+            .from('trips')
+            .insert([{ 
+                title,
+                destination, 
+                pact_amount: pactAmount || null,
+                creator_id: userId,
+                members: [userId]
+            }]);
+
+        if (error) {
+            console.error("Error creating trip: ", error);
+        } else {
+            setView('tripList');
+        }
+        setIsCreating(false);
+    };
+
+    return (
+        <div className="bg-white/80 backdrop-blur-md p-4 md:p-8 rounded-lg shadow-lg max-w-2xl mx-auto">
+            <h2 className="text-3xl font-bold text-gray-800 mb-6">Create a New Trip</h2>
+            <form onSubmit={handleCreateTrip} className="space-y-6">
+                <div>
+                    <label htmlFor="trip-title" className="block text-sm font-medium text-gray-700 mb-1">Trip Title</label>
+                    <input id="trip-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Rishikesh Adventure" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" required />
+                </div>
+                <div>
+                    <label htmlFor="destination" className="block text-sm font-medium text-gray-700 mb-1">Destination</label>
+                    <input id="destination" type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="e.g., Uttarakhand, India" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" required />
+                </div>
+                <div>
+                    <label htmlFor="pact-amount" className="block text-sm font-medium text-gray-700 mb-1">Pact Amount (₹)</label>
+                    <input 
+                        id="pact-amount" 
+                        type="number" 
+                        value={pactAmount} 
+                        onChange={(e) => setPactAmount(e.target.value)} 
+                        placeholder="e.g., 1000 (Optional)" 
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        min="0"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">The amount each member must pledge to join the trip.</p>
+                </div>
+                <div className="flex justify-end gap-4">
+                     <button type="button" onClick={() => setView('tripList')} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition duration-300">
+                        Cancel
+                    </button>
+                    <button type="submit" disabled={isCreating} className="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 disabled:bg-indigo-300">
+                        {isCreating ? 'Creating...' : 'Create Trip'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+};
+
+const TripDetail = ({ tripId, setView, userId }) => {
+    const [trip, setTrip] = useState(null);
+    const [itinerary, setItinerary] = useState([]);
+    const [expenses, setExpenses] = useState([]);
+    const [transactions, setTransactions] = useState([]);
+    const [memberProfiles, setMemberProfiles] = useState([]);
+    const [budgets, setBudgets] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showItineraryModal, setShowItineraryModal] = useState(false);
+    const [showExpenseModal, setShowExpenseModal] = useState(false);
+    const [showSettleModal, setShowSettleModal] = useState(false);
+    const [showBudgetModal, setShowBudgetModal] = useState(false);
+    const [isPledging, setIsPledging] = useState(false);
+
+    useEffect(() => {
+        if (!tripId) return;
+        setLoading(true);
+
+        const fetchAllData = async () => {
+            const { data: tripData, error: tripError } = await supabase.from('trips').select('*').eq('id', tripId).single();
+            if (tripError) { setLoading(false); return; }
+            setTrip(tripData);
+
+            const [itineraryRes, expensesRes, transactionsRes, profilesRes, budgetsRes] = await Promise.all([
+                supabase.from('itinerary').select('*').eq('trip_id', tripId).order('date', { ascending: true }),
+                supabase.from('expenses').select('*').eq('trip_id', tripId).order('created_at', { ascending: false }),
+                supabase.from('trip_wallet_transactions').select('*').eq('trip_id', tripId),
+                supabase.from('profiles').select('id, email, upi_id').in('id', tripData.members),
+                supabase.from('budgets').select('*').eq('trip_id', tripId)
+            ]);
+            
+            setItinerary(itineraryRes.data || []);
+            setExpenses(expensesRes.data || []);
+            setTransactions(transactionsRes.data || []);
+            setMemberProfiles(profilesRes.data || []);
+            setBudgets(budgetsRes.data || []);
+            setLoading(false);
+        };
+        fetchAllData();
+
+        const channel = supabase.channel(`trip-details-${tripId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: '*' }, () => fetchAllData())
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [tripId]);
+    
+    const handlePledge = async () => {
+        setIsPledging(true);
+        const newMembers = [...trip.members, userId];
+        const { error: memberError } = await supabase.from('trips').update({ members: newMembers }).eq('id', tripId);
+        const { error: transactionError } = await supabase.from('trip_wallet_transactions').insert({ trip_id: tripId, user_id: userId, transaction_type: 'pledge', amount: trip.pact_amount });
+        if(memberError || transactionError) console.error("Pledge Error:", memberError || transactionError);
+        setIsPledging(false);
+    };
+
+    const copyTripId = () => {
+        navigator.clipboard.writeText(tripId);
+        alert("Trip ID copied to clipboard!");
+    };
+    
+    const addItineraryItem = async (item) => {
+        await supabase.from('itinerary').insert([{ ...item, trip_id: tripId }]);
+        setShowItineraryModal(false);
+    };
+    
+    const addExpenseItem = async (item, billFile) => {
+        let bill_url = null;
+        if (billFile) {
+            const fileName = `${userId}/${tripId}/${Date.now()}_${billFile.name}`;
+            const { data, error } = await supabase.storage.from('bills').upload(fileName, billFile);
+            if (error) {
+                console.error('Error uploading bill:', error);
+            } else {
+                const { data: { publicUrl } } = supabase.storage.from('bills').getPublicUrl(fileName);
+                bill_url = publicUrl;
+            }
+        }
+
+        await supabase.from('expenses').insert([{ 
+            ...item, 
+            bill_url,
+            trip_id: tripId, 
+            paid_by: userId 
+        }]);
+        setShowExpenseModal(false);
+    };
+
+    if (loading) return <Spinner />;
+    if (!trip) return <p>Trip not found.</p>;
+
+    const isMember = trip.members.includes(userId);
+    const isCreator = trip.creator_id === userId;
+    const pledgedUserIds = transactions.filter(t => t.transaction_type === 'pledge').map(t => t.user_id);
+    const totalPledged = transactions.filter(t => t.transaction_type === 'pledge').reduce((sum, t) => sum + t.amount, 0);
+    const totalExpenses = expenses.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+
+    return (
+        <div className="bg-white/80 backdrop-blur-md p-4 md:p-8 rounded-lg shadow-lg">
+            <button onClick={() => setView('tripList')} className="text-indigo-600 font-semibold mb-4 inline-block">&larr; Back to Trips</button>
+            <div className="flex flex-col sm:flex-row justify-between items-start mb-8">
+                <div>
+                    <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900">{trip.title}</h2>
+                    <p className="text-lg text-gray-600">{trip.destination}</p>
+                </div>
+                <div className="flex gap-2 mt-4 sm:mt-0">
+                    {isCreator && (
+                        <button onClick={() => setShowBudgetModal(true)} className="bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600 text-sm">Manage Budget</button>
+                    )}
+                    <button onClick={copyTripId} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 text-sm">Share Trip ID</button>
+                </div>
+            </div>
+            
+            <div className="mb-8 p-6 bg-indigo-50 rounded-xl">
+                <h3 className="text-2xl font-bold text-indigo-800 mb-4">Trip Pact & Wallet</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div>
+                        <p className="text-sm font-bold text-gray-500">PACT AMOUNT</p>
+                        <p className="text-4xl font-bold text-indigo-600">₹{trip.pact_amount || 0}</p>
+                        <p className="text-sm text-gray-600">This is the amount each member must pledge to join.</p>
+                    </div>
+                    <div>
+                         <p className="text-sm font-bold text-gray-500">WALLET TOTAL</p>
+                        <p className="text-4xl font-bold text-green-600">₹{totalPledged}</p>
+                        <p className="text-sm text-gray-600">{pledgedUserIds.length} of {trip.members.length} members have pledged.</p>
+                    </div>
+                    <div>
+                        <p className="text-sm font-bold text-gray-500 mb-2">MEMBERS</p>
+                        <ul className="space-y-2">
+                            {memberProfiles.map(profile => (
+                                <li key={profile.id} className="flex items-center justify-between text-sm">
+                                    <span className="text-gray-700">{profile.email}</span>
+                                    {pledgedUserIds.includes(profile.id) ? (
+                                        <span className="flex items-center gap-1 text-green-600 font-bold">✅ Pledged</span>
+                                    ) : (
+                                        <span className="flex items-center gap-1 text-yellow-600 font-bold">⌛ Pending</span>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+                {!isMember && trip.pact_amount > 0 && (
+                    <div className="mt-6 text-center">
+                        <button onClick={handlePledge} disabled={isPledging} className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition duration-300 shadow-lg">
+                            {isPledging ? 'Pledging...' : `Pledge ₹${trip.pact_amount} & Join`}
+                        </button>
+                    </div>
+                )}
+            </div>
+            
+            {budgets.length > 0 && (
+                <div className="mb-8 p-6 bg-yellow-50 rounded-xl">
+                    <h3 className="text-2xl font-bold text-yellow-800 mb-4">Budget Tracker</h3>
+                    <div className="space-y-4">
+                        {budgets.map(budget => {
+                            const spent = expenses
+                                .filter(e => e.category === budget.category)
+                                .reduce((sum, e) => sum + e.amount, 0);
+                            const percentage = (spent / budget.amount) * 100;
+                            return (
+                                <div key={budget.category}>
+                                    <div className="flex justify-between mb-1">
+                                        <span className="text-base font-medium text-gray-700">{budget.category}</span>
+                                        <span className="text-sm font-medium text-gray-700">₹{spent.toFixed(0)} / ₹{budget.amount}</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                        <div 
+                                            className="bg-yellow-500 h-2.5 rounded-full" 
+                                            style={{ width: `${Math.min(percentage, 100)}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            <div className="mb-8 p-6 bg-green-50 rounded-xl text-center">
+                <h3 className="text-2xl font-bold text-green-800 mb-2">Ready to Settle Up?</h3>
+                <p className="text-gray-600 mb-4">Calculate who owes whom based on the trip's expenses.</p>
+                <button 
+                    onClick={() => setShowSettleModal(true)}
+                    className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition duration-300 shadow-lg"
+                >
+                    Calculate Balances
+                </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="bg-white/50 p-6 rounded-xl shadow-inner lg:col-span-1">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-2xl font-bold">Itinerary</h3>
+                        <button onClick={() => setShowItineraryModal(true)} className="bg-blue-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-blue-600 text-sm">+ Add</button>
+                    </div>
+                    <div className="space-y-4">
+                        {itinerary.sort((a, b) => new Date(a.date) - new Date(b.date)).map(item => (
+                            <div key={item.id} className="p-4 bg-gray-50/80 rounded-lg">
+                                <p className="font-bold text-gray-800">{item.activity}</p>
+                                <p className="text-sm text-gray-500">{item.date} at {item.time}</p>
+                                {item.notes && <p className="text-sm text-gray-600 mt-1">{item.notes}</p>}
+                            </div>
+                        ))}
+                        {itinerary.length === 0 && <p className="text-gray-500">No itinerary items yet.</p>}
+                    </div>
+                </div>
+                
+                <div className="bg-white/50 p-6 rounded-xl shadow-inner lg:col-span-1">
+                     <ExpenseFeed expenses={expenses} memberProfiles={memberProfiles} />
+                </div>
+
+                <div className="bg-white/50 p-6 rounded-xl shadow-inner lg:col-span-1">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-2xl font-bold">Expenses</h3>
+                        <button onClick={() => setShowExpenseModal(true)} className="bg-green-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-green-600 text-sm">+ Add</button>
+                    </div>
+                    <div className="space-y-4 mb-4">
+                         {expenses.map(item => (
+                            <div key={item.id} className="flex justify-between items-center p-4 bg-gray-50/80 rounded-lg">
+                                <div>
+                                    <p className="font-semibold text-gray-800">{item.description}</p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <p className="text-xs text-gray-500">Paid by: {memberProfiles.find(p => p.id === item.paid_by)?.email.split('@')[0] || '...'}
+                                        </p>
+                                        <span className="text-xs font-bold text-indigo-700">
+                                            {item.split_method === 'you_are_owed' ? '• You are Owed' : '• Split Equally'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    {item.bill_url && (
+                                        <a href={item.bill_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                        </a>
+                                    )}
+                                    <p className="font-bold text-lg text-gray-900">₹{parseFloat(item.amount).toFixed(2)}</p>
+                                </div>
+                            </div>
+                        ))}
+                        {expenses.length === 0 && <p className="text-gray-500">No expenses logged yet.</p>}
+                    </div>
+                    <div className="border-t-2 border-gray-200 pt-4 flex justify-between items-center">
+                        <h4 className="text-lg font-bold">Total:</h4>
+                        <p className="text-2xl font-extrabold text-gray-900">₹{totalExpenses.toFixed(2)}</p>
+                    </div>
+                </div>
+            </div>
+
+            {showItineraryModal && <Modal onClose={() => setShowItineraryModal(false)}><ItineraryForm onSubmit={addItineraryItem} /></Modal>}
+            {showExpenseModal && <Modal onClose={() => setShowExpenseModal(false)}><ExpenseForm onSubmit={addExpenseItem} /></Modal>}
+            {showSettleModal && (
+                <Modal onClose={() => setShowSettleModal(false)}>
+                    <SettlementCalculator 
+                        expenses={expenses}
+                        pledgedUserIds={pledgedUserIds}
+                        memberProfiles={memberProfiles}
+                        tripName={trip.title}
+                    />
+                </Modal>
+            )}
+            {showBudgetModal && (
+                <Modal onClose={() => setShowBudgetModal(false)}>
+                    <BudgetForm 
+                        tripId={tripId}
+                        existingBudgets={budgets}
+                        onClose={() => setShowBudgetModal(false)}
+                    />
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+const SettlementCalculator = ({ expenses, pledgedUserIds, memberProfiles, tripName }) => {
+    // ... (This component remains the same)
+    const settlement = useMemo(() => {
+        const balances = {};
+        const participatingMembers = memberProfiles.filter(p => pledgedUserIds.includes(p.id));
+        const numParticipants = participatingMembers.length;
+
+        if (numParticipants === 0) return { balances: [], transactions: [] };
+
+        participatingMembers.forEach(p => { balances[p.id] = 0; });
+
+        const sharedExpenses = expenses.filter(e => e.split_method === 'split_equally');
+        const totalSharedCost = sharedExpenses.reduce((sum, e) => sum + e.amount, 0);
+        const individualShare = numParticipants > 0 ? totalSharedCost / numParticipants : 0;
+
+        participatingMembers.forEach(p => { balances[p.id] -= individualShare; });
+        
+        expenses.forEach(e => {
+            if (balances[e.paid_by] !== undefined) {
+                balances[e.paid_by] += e.amount;
+            }
+        });
+
+        const debtors = [];
+        const creditors = [];
+        Object.entries(balances).forEach(([userId, balance]) => {
+            if (balance < 0) debtors.push({ userId, amount: -balance });
+            if (balance > 0) creditors.push({ userId, amount: balance });
+        });
+
+        const transactions = [];
+        while (debtors.length > 0 && creditors.length > 0) {
+            const debtor = debtors[0];
+            const creditor = creditors[0];
+            const amount = Math.min(debtor.amount, creditor.amount);
+
+            transactions.push({ from: debtor.userId, to: creditor.userId, amount: amount });
+
+            debtor.amount -= amount;
+            creditor.amount -= amount;
+
+            if (debtor.amount < 0.01) debtors.shift();
+            if (creditor.amount < 0.01) creditors.shift();
+        }
+
+        return { balances, transactions };
+    }, [expenses, pledgedUserIds, memberProfiles]);
+
+    const getProfile = (userId) => memberProfiles.find(p => p.id === userId) || {};
+
+    return (
+        <div>
+            <h3 className="text-2xl font-bold text-center mb-4">Trip Settlement</h3>
+            <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-bold mb-2">Final Balances:</h4>
+                <ul className="space-y-2">
+                    {Object.entries(settlement.balances).map(([userId, balance]) => (
+                        <li key={userId} className="flex justify-between items-center text-sm">
+                            <span>{getProfile(userId).email}</span>
+                            {balance < 0 ? (
+                                <span className="font-bold text-red-600">Owes ₹{(-balance).toFixed(2)}</span>
+                            ) : (
+                                <span className="font-bold text-green-600">Is Owed ₹{balance.toFixed(2)}</span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+
+            <div className="mt-6">
+                <h4 className="font-bold mb-2 text-center">How to Settle Up:</h4>
+                {settlement.transactions.length > 0 ? (
+                    <ul className="space-y-3">
+                        {settlement.transactions.map((t, i) => {
+                            const toProfile = getProfile(t.to);
+                            const upiLink = `upi://pay?pa=${toProfile.upi_id}&pn=${toProfile.email.split('@')[0]}&am=${t.amount.toFixed(2)}&tn=Ghumakkad Trip: ${tripName}`;
+                            
+                            return (
+                                <li key={i} className="bg-indigo-50 p-3 rounded-lg text-center">
+                                    <p>
+                                        <span className="font-bold text-red-600">{getProfile(t.from).email}</span>
+                                        {' '}should pay{' '}
+                                        <span className="font-bold text-green-600">{getProfile(t.to).email}</span>
+                                        {' '}a total of{' '}
+                                        <span className="font-bold text-indigo-800">₹{t.amount.toFixed(2)}</span>
+                                    </p>
+                                    {toProfile.upi_id && (
+                                        <a 
+                                            href={upiLink}
+                                            className="mt-2 inline-block bg-blue-500 text-white font-bold py-1 px-3 text-sm rounded-full hover:bg-blue-600"
+                                        >
+                                            Generate UPI Link
+                                        </a>
+                                    )}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                ) : (
+                    <p className="text-center text-gray-500">All balances are settled!</p>
+                )}
+            </div>
+        </div>
+    );
+};
+
+
+const ExpenseFeed = ({ expenses, memberProfiles }) => {
+    const getProfile = (userId) => memberProfiles.find(p => p.id === userId) || {};
+
+    const categoryIcons = {
+        'Food': '🍔',
+        'Travel': '✈️',
+        'Accommodation': '🏨',
+        'Activities': '🎉',
+        'Other': '🛍️'
+    };
+
+    return (
+        <div>
+            <h3 className="text-2xl font-bold mb-4">Live Feed</h3>
+            <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                {expenses.length > 0 ? expenses.map(expense => {
+                    const profile = getProfile(expense.paid_by);
+                    return (
+                        <div key={expense.id} className="flex gap-3">
+                            <div className="text-2xl">{categoryIcons[expense.category] || '🛍️'}</div>
+                            <div>
+                                <p className="text-sm text-gray-800">
+                                    <span className="font-bold">{profile.email ? profile.email.split('@')[0] : 'Someone'}</span>
+                                    {' '}added an expense for{' '}
+                                    <span className="font-bold">{expense.description}</span>.
+                                </p>
+                                <p className="text-xs text-gray-500">Amount: ₹{expense.amount}</p>
+                            </div>
+                        </div>
+                    );
+                }) : (
+                    <p className="text-center text-gray-500">No expenses added yet. The feed will update live as you add them!</p>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const ItineraryForm = ({ onSubmit }) => {
+    const [activity, setActivity] = useState('');
+    const [date, setDate] = useState('');
+    const [time, setTime] = useState('');
+    const [notes, setNotes] = useState('');
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSubmit({ activity, date, time, notes });
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <h3 className="text-xl font-bold">Add Itinerary Item</h3>
+            <input type="text" value={activity} onChange={e => setActivity(e.target.value)} placeholder="Activity (e.g., Beach Visit)" className="w-full p-2 border rounded" required />
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-2 border rounded" required />
+            <input type="time" value={time} onChange={e => setTime(e.target.value)} className="w-full p-2 border rounded" required />
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" className="w-full p-2 border rounded"></textarea>
+            <button type="submit" className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Add Item</button>
+        </form>
+    );
+};
+
+const ExpenseForm = ({ onSubmit }) => {
+    const [description, setDescription] = useState('');
+    const [amount, setAmount] = useState('');
+    const [splitMethod, setSplitMethod] = useState('split_equally');
+    const [category, setCategory] = useState('Other');
+    const [billFile, setBillFile] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    
+    const categories = ['Food', 'Travel', 'Accommodation', 'Activities', 'Other'];
+
+    const handleFileChange = (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+            setBillFile(e.target.files[0]);
+        }
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setUploading(true);
+        await onSubmit({ description, amount, split_method: splitMethod, category }, billFile);
+        setUploading(false);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-6">
+            <h3 className="text-xl font-bold text-center">Add Expense</h3>
+            
+            <div>
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g., Dinner at the hotel" className="w-full p-2 border rounded mt-1" required />
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700">Amount (₹)</label>
+                    <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g., 1200" className="w-full p-2 border rounded mt-1" required min="0" step="0.01" />
+                </div>
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700">Category</label>
+                    <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full p-2 border rounded mt-1 bg-white">
+                        {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700">Attach Bill (Optional)</label>
+                <input 
+                    type="file"
+                    onChange={handleFileChange}
+                    accept="image/*"
+                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 mt-1"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">How should this be split?</label>
+                <div className="flex gap-4">
+                    <div 
+                        onClick={() => setSplitMethod('split_equally')}
+                        className={`flex-1 p-4 border rounded-lg cursor-pointer text-center ${splitMethod === 'split_equally' ? 'bg-indigo-100 border-indigo-500 ring-2 ring-indigo-500' : 'bg-gray-50'}`}
+                    >
+                        <p className="font-bold">Split Equally</p>
+                        <p className="text-xs text-gray-500">Among all pledged members</p>
+                    </div>
+                    <div 
+                        onClick={() => setSplitMethod('you_are_owed')}
+                        className={`flex-1 p-4 border rounded-lg cursor-pointer text-center ${splitMethod === 'you_are_owed' ? 'bg-indigo-100 border-indigo-500 ring-2 ring-indigo-500' : 'bg-gray-50'}`}
+                    >
+                        <p className="font-bold">You are Owed</p>
+                        <p className="text-xs text-gray-500">You paid for the group</p>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" disabled={uploading} className="w-full bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 font-bold disabled:bg-green-400">
+                {uploading ? 'Uploading...' : 'Add Expense'}
+            </button>
+        </form>
+    );
+};
+
+const BudgetForm = ({ tripId, existingBudgets, onClose }) => {
+    const categories = ['Food', 'Travel', 'Accommodation', 'Activities', 'Other'];
+    const [budgets, setBudgets] = useState(() => {
+        const initialState = {};
+        categories.forEach(cat => {
+            const existing = existingBudgets.find(b => b.category === cat);
+            initialState[cat] = existing ? existing.amount : '';
+        });
+        return initialState;
+    });
+    const [saving, setSaving] = useState(false);
+
+    const handleSaveBudgets = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+
+        const upsertData = categories
+            .filter(cat => budgets[cat] && budgets[cat] > 0)
+            .map(cat => ({
+                trip_id: tripId,
+                category: cat,
+                amount: budgets[cat]
+            }));
+        
+        const { error } = await supabase.from('budgets').upsert(upsertData, { onConflict: 'trip_id, category' });
+
+        if (error) {
+            console.error("Error saving budgets:", error);
+        } else {
+            onClose();
+        }
+        setSaving(false);
+    };
+    
+    return (
+        <form onSubmit={handleSaveBudgets}>
+            <h3 className="text-xl font-bold text-center mb-6">Manage Trip Budget</h3>
+            <div className="space-y-4">
+                {categories.map(cat => (
+                    <div key={cat}>
+                        <label className="block text-sm font-medium text-gray-700">{cat}</label>
+                        <input
+                            type="number"
+                            placeholder="Set budget amount"
+                            value={budgets[cat]}
+                            onChange={(e) => setBudgets({...budgets, [cat]: e.target.value})}
+                            className="w-full p-2 border rounded mt-1"
+                            min="0"
+                        />
+                    </div>
+                ))}
+            </div>
+            <button type="submit" disabled={saving} className="w-full mt-6 bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 font-bold disabled:bg-indigo-400">
+                {saving ? 'Saving...' : 'Save Budgets'}
+            </button>
+        </form>
+    );
+};
+
+
+// This is the main component for this file.
+export default function MyTrips() {
+    const [view, setView] = useState('tripList'); 
+    const [selectedTripId, setSelectedTripId] = useState(null);
+    const [session, setSession] = useState(null);
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const userId = session?.user?.id;
+
+    if (!userId) {
+        return <Spinner />;
+    }
+
+    switch (view) {
+        case 'createTrip':
+            return <CreateTrip setView={setView} userId={userId} />;
+        case 'tripDetail':
+            return <TripDetail tripId={selectedTripId} setView={setView} userId={userId} />;
+        case 'tripList':
+        default:
+            return <TripList setView={setView} setSelectedTripId={setSelectedTripId} userId={userId} />;
+    }
 }

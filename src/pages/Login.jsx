@@ -1,80 +1,107 @@
-import React, { useState } from 'react'
-import { supabase } from '../supabaseClient'
-import Signup from './Signup.jsx'
+import React, { useState } from 'react';
+import { supabase } from '../supabaseClient'; // Make sure this path is correct
+import { Link, useNavigate } from 'react-router-dom';
 
-export default function Login() {
-  const [loading, setLoading] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState(null)
-  const [showSignup, setShowSignup] = useState(false);
+const Login = () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const navigate = useNavigate();
 
-  const handleLogin = async (event) => {
-    event.preventDefault()
-    setLoading(true)
-    setError(null)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
 
-    if (error) {
-      setError(error.message)
-    }
-    setLoading(false)
-  }
-  
-  if (showSignup) {
-      return <Signup goBack={() => setShowSignup(false)} />;
-  }
+        if (error) {
+            setError(error.message);
+        } else {
+            navigate('/dashboard'); // Redirect to dashboard on successful login
+        }
+        setLoading(false);
+    };
 
-  return (
-    <div className="flex justify-center items-center min-h-screen bg-gray-100">
-      <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-lg">
-        <h1 className="text-3xl font-bold text-center text-[#073B4C]">Welcome Back!</h1>
-        <p className="text-center text-gray-500">Log in to plan your next adventure.</p>
-        
-        {error && <p className="text-red-500 text-center">{error}</p>}
+    return (
+        <div className="hero-mountains-background px-4">
+            {/* Glassmorphism Form Card */}
+            <div className="w-full max-w-md p-6 sm:p-8 space-y-6 sm:space-y-8 bg-white/20 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20">
+                <div className="text-center">
+                    <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">Welcome Back!</h1>
+                    <p className="mt-2 text-gray-600">Log in to plan your next adventure.</p>
+                </div>
 
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label htmlFor="email" className="text-sm font-medium text-gray-700">Email address</label>
-            <input
-              id="email"
-              className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:ring-[#118AB2] focus:border-[#118AB2]"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              required
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="text-sm font-medium text-gray-700">Password</label>
-            <input
-              id="password"
-              className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:ring-[#118AB2] focus:border-[#118AB2]"
-              type="password"
-              placeholder="Your password"
-              value={password}
-              required
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <div>
-            <button 
-              type="submit"
-              className="w-full py-3 px-4 bg-[#118AB2] text-white font-bold rounded-md hover:bg-[#0e7694] transition shadow-lg disabled:opacity-50"
-              disabled={loading}
-            >
-              {loading ? <span>Loading...</span> : <span>Log In</span>}
-            </button>
-          </div>
-        </form>
-        <p className="text-center text-sm text-gray-600">
-          Don't have an account?{' '}
-          <button onClick={() => setShowSignup(true)} className="font-medium text-[#118AB2] hover:underline">
-            Sign Up
-          </button>
-        </p>
-      </div>
-    </div>
-  )
-}
+                <form onSubmit={handleLogin} className="space-y-6">
+                    <div>
+                        <label
+                            htmlFor="email"
+                            className="block text-sm font-medium text-gray-700"
+                        >
+                            Email address
+                        </label>
+                        <div className="mt-1">
+                            <input
+                                id="email"
+                                name="email"
+                                type="email"
+                                autoComplete="email"
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full px-4 py-3 bg-white/50 border border-white/30 rounded-lg shadow-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                placeholder="you@example.com"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label
+                            htmlFor="password"
+                            className="block text-sm font-medium text-gray-700"
+                        >
+                            Password
+                        </label>
+                        <div className="mt-1">
+                            <input
+                                id="password"
+                                name="password"
+                                type="password"
+                                autoComplete="current-password"
+                                required
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="w-full px-4 py-3 bg-white/50 border border-white/30 rounded-lg shadow-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                placeholder="••••••••"
+                            />
+                        </div>
+                    </div>
+
+                    {error && <p className="text-center text-sm text-red-600 bg-red-100 p-3 rounded-lg">{error}</p>}
+
+                    <div>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-lg text-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-all duration-300"
+                        >
+                            {loading ? 'Logging In...' : 'Log In'}
+                        </button>
+                    </div>
+                </form>
+
+                <p className="mt-6 text-center text-md text-gray-600">
+                    Don't have an account?{' '}
+                    <Link to="/signup" className="font-bold text-indigo-700 hover:text-indigo-800">
+                        Sign Up
+                    </Link>
+                </p>
+            </div>
+        </div>
+    );
+};
+
+export default Login;
