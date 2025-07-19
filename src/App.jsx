@@ -1,26 +1,46 @@
-import React from 'react';
-import { Routes, Route } from 'react-router-dom';
-import Login from './pages/Login.jsx'; // Make sure this path is correct
-import SignUp from './pages/SignUp.jsx'; // Make sure this path is correct
-import Dashboard from './pages/Dashboard.jsx'; // Make sure this path is correct
-import PrivateRoute from './components/PrivateRoute.jsx'; // We will create this next
+import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { supabase } from './supabaseClient'; // Make sure this path is correct
+
+import Login from './pages/Login.jsx';
+// FIXED: Changed SignUp.jsx to Signup.jsx to match potential filename case sensitivity issues on deployment.
+// Please ensure your file in src/pages/ is named exactly "Signup.jsx"
+import SignUp from './pages/Signup.jsx'; 
+import Dashboard from './pages/Dashboard.jsx';
 
 export default function App() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) {
+    return null; 
+  }
+
   return (
     <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={<Login />} />
+      <Route path="/" element={session ? <Navigate to="/dashboard" /> : <Login />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<SignUp />} />
-
-      {/* Private Routes */}
-      {/* We will wrap the dashboard in a PrivateRoute to protect it */}
+      
       <Route 
         path="/dashboard" 
         element={
-          <PrivateRoute>
-            <Dashboard />
-          </PrivateRoute>
+          session ? <Dashboard session={session} /> : <Navigate to="/login" />
         } 
       />
     </Routes>
