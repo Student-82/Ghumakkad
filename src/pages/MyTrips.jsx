@@ -200,8 +200,10 @@ const TripDetail = ({ tripId, setView, userId }) => {
     const [memberProfiles, setMemberProfiles] = useState([]);
     const [budgets, setBudgets] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [showItineraryModal, setShowItineraryModal] = useState(false);
-    const [showExpenseModal, setShowExpenseModal] = useState(false);
+    
+    const [editingItinerary, setEditingItinerary] = useState(null);
+    const [editingExpense, setEditingExpense] = useState(null);
+
     const [showSettleModal, setShowSettleModal] = useState(false);
     const [showBudgetModal, setShowBudgetModal] = useState(false);
     const [isPledging, setIsPledging] = useState(false);
@@ -273,16 +275,28 @@ const TripDetail = ({ tripId, setView, userId }) => {
         alert("Trip ID copied to clipboard!");
     };
     
-    const addItineraryItem = async (item) => {
-        await supabase.from('itinerary').insert([{ ...item, trip_id: tripId }]);
-        setShowItineraryModal(false);
+    const handleSaveItinerary = async (item) => {
+        if (editingItinerary && editingItinerary.id) {
+            const { error } = await supabase.from('itinerary').update(item).eq('id', editingItinerary.id);
+            if (error) console.error("Error updating itinerary:", error);
+        } else {
+            const { error } = await supabase.from('itinerary').insert([{ ...item, trip_id: tripId }]);
+            if (error) console.error("Error adding itinerary:", error);
+        }
+        setEditingItinerary(null);
     };
-    
-    const addExpenseItem = async (item, billFile) => {
-        let bill_url = null;
+
+    const handleDeleteItinerary = async (itemId) => {
+        if (window.confirm("Are you sure you want to delete this itinerary item?")) {
+            await supabase.from('itinerary').delete().eq('id', itemId);
+        }
+    };
+
+    const handleSaveExpense = async (item, billFile) => {
+        let bill_url = editingExpense ? editingExpense.bill_url : null;
         if (billFile) {
             const fileName = `${userId}/${tripId}/${Date.now()}_${billFile.name}`;
-            const { data, error } = await supabase.storage.from('bills').upload(fileName, billFile);
+            const { error } = await supabase.storage.from('bills').upload(fileName, billFile);
             if (error) {
                 console.error('Error uploading bill:', error);
             } else {
@@ -291,13 +305,18 @@ const TripDetail = ({ tripId, setView, userId }) => {
             }
         }
 
-        await supabase.from('expenses').insert([{ 
-            ...item, 
-            bill_url,
-            trip_id: tripId, 
-            paid_by: userId 
-        }]);
-        setShowExpenseModal(false);
+        if (editingExpense && editingExpense.id) {
+            await supabase.from('expenses').update({ ...item, bill_url }).eq('id', editingExpense.id);
+        } else {
+            await supabase.from('expenses').insert([{ ...item, bill_url, trip_id: tripId, paid_by: userId }]);
+        }
+        setEditingExpense(null);
+    };
+
+    const handleDeleteExpense = async (expenseId) => {
+        if (window.confirm("Are you sure you want to delete this expense?")) {
+            await supabase.from('expenses').delete().eq('id', expenseId);
+        }
     };
 
     if (loading) return <Spinner />;
@@ -309,7 +328,6 @@ const TripDetail = ({ tripId, setView, userId }) => {
     const totalPledged = transactions.filter(t => t.transaction_type === 'pledge').reduce((sum, t) => sum + t.amount, 0);
     const totalExpenses = expenses.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
     
-    // FIXED: Safe getter for profile info
     const getProfile = (id) => memberProfiles.find(p => p.id === id);
 
     return (
@@ -415,14 +433,22 @@ const TripDetail = ({ tripId, setView, userId }) => {
                 <div className="bg-white/50 p-6 rounded-xl shadow-inner lg:col-span-1">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-2xl font-bold">Itinerary</h3>
-                        <button onClick={() => setShowItineraryModal(true)} className="bg-blue-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-blue-600 text-sm">+ Add</button>
+                        <button onClick={() => setEditingItinerary({})} className="bg-blue-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-blue-600 text-sm">+ Add</button>
                     </div>
                     <div className="space-y-4">
                         {itinerary.sort((a, b) => new Date(a.date) - new Date(b.date)).map(item => (
-                            <div key={item.id} className="p-4 bg-gray-50/80 rounded-lg">
-                                <p className="font-bold text-gray-800">{item.activity}</p>
-                                <p className="text-sm text-gray-500">{item.date} at {item.time}</p>
-                                {item.notes && <p className="text-sm text-gray-600 mt-1">{item.notes}</p>}
+                            <div key={item.id} className="p-4 bg-gray-50/80 rounded-lg group relative">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="font-bold text-gray-800">{item.activity}</p>
+                                        <p className="text-sm text-gray-500">{item.date} at {item.time}</p>
+                                        {item.notes && <p className="text-sm text-gray-600 mt-1">{item.notes}</p>}
+                                    </div>
+                                    <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => setEditingItinerary(item)} className="text-blue-500 hover:text-blue-700">✏️</button>
+                                        <button onClick={() => handleDeleteItinerary(item.id)} className="text-red-500 hover:text-red-700">🗑️</button>
+                                    </div>
+                                </div>
                             </div>
                         ))}
                         {itinerary.length === 0 && <p className="text-gray-500">No itinerary items yet.</p>}
@@ -436,22 +462,22 @@ const TripDetail = ({ tripId, setView, userId }) => {
                 <div className="bg-white/50 p-6 rounded-xl shadow-inner lg:col-span-1">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-2xl font-bold">Expenses</h3>
-                        <button onClick={() => setShowExpenseModal(true)} className="bg-green-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-green-600 text-sm">+ Add</button>
+                        <button onClick={() => setEditingExpense({})} className="bg-green-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-green-600 text-sm">+ Add</button>
                     </div>
                     <div className="space-y-4 mb-4">
                          {expenses.map(item => (
-                            <div key={item.id} className="flex justify-between items-center p-4 bg-gray-50/80 rounded-lg">
+                            <div key={item.id} className="flex justify-between items-center p-4 bg-gray-50/80 rounded-lg group relative">
                                 <div>
                                     <p className="font-semibold text-gray-800">{item.description}</p>
                                     <div className="flex items-center gap-2 mt-1">
-                                        <p className="text-xs text-gray-500">Paid by: {getProfile(item.paid_by)?.email?.split('@')[0] || '...'}
+                                        <p className="text-xs text-gray-500">Paid by: {getProfile(item.paid_by)?.email?.split('@')[0] || 'A member'}
                                         </p>
                                         <span className="text-xs font-bold text-indigo-700">
                                             {item.split_method === 'you_are_owed' ? '• You are Owed' : '• Split Equally'}
                                         </span>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
                                     {item.bill_url && (
                                         <a href={item.bill_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700">
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -460,6 +486,10 @@ const TripDetail = ({ tripId, setView, userId }) => {
                                         </a>
                                     )}
                                     <p className="font-bold text-lg text-gray-900">₹{parseFloat(item.amount).toFixed(2)}</p>
+                                    <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => setEditingExpense(item)} className="text-blue-500 hover:text-blue-700">✏️</button>
+                                        <button onClick={() => handleDeleteExpense(item.id)} className="text-red-500 hover:text-red-700">🗑️</button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -472,8 +502,8 @@ const TripDetail = ({ tripId, setView, userId }) => {
                 </div>
             </div>
 
-            {showItineraryModal && <Modal onClose={() => setShowItineraryModal(false)}><ItineraryForm onSubmit={addItineraryItem} /></Modal>}
-            {showExpenseModal && <Modal onClose={() => setShowExpenseModal(false)}><ExpenseForm onSubmit={addExpenseItem} /></Modal>}
+            {editingItinerary && <Modal onClose={() => setEditingItinerary(null)}><ItineraryForm onSubmit={handleSaveItinerary} existingItem={editingItinerary} /></Modal>}
+            {editingExpense && <Modal onClose={() => setEditingExpense(null)}><ExpenseForm onSubmit={handleSaveExpense} existingItem={editingExpense} /></Modal>}
             {showSettleModal && (
                 <Modal onClose={() => setShowSettleModal(false)}>
                     <SettlementCalculator 
@@ -642,11 +672,11 @@ const ExpenseFeed = ({ expenses, memberProfiles }) => {
     );
 };
 
-const ItineraryForm = ({ onSubmit }) => {
-    const [activity, setActivity] = useState('');
-    const [date, setDate] = useState('');
-    const [time, setTime] = useState('');
-    const [notes, setNotes] = useState('');
+const ItineraryForm = ({ onSubmit, existingItem }) => {
+    const [activity, setActivity] = useState(existingItem?.activity || '');
+    const [date, setDate] = useState(existingItem?.date || '');
+    const [time, setTime] = useState(existingItem?.time || '');
+    const [notes, setNotes] = useState(existingItem?.notes || '');
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -655,21 +685,21 @@ const ItineraryForm = ({ onSubmit }) => {
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
-            <h3 className="text-xl font-bold">Add Itinerary Item</h3>
+            <h3 className="text-xl font-bold">{existingItem?.id ? 'Edit' : 'Add'} Itinerary Item</h3>
             <input type="text" value={activity} onChange={e => setActivity(e.target.value)} placeholder="Activity (e.g., Beach Visit)" className="w-full p-2 border rounded" required />
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-2 border rounded" required />
             <input type="time" value={time} onChange={e => setTime(e.target.value)} className="w-full p-2 border rounded" required />
             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" className="w-full p-2 border rounded"></textarea>
-            <button type="submit" className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Add Item</button>
+            <button type="submit" className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Save</button>
         </form>
     );
 };
 
-const ExpenseForm = ({ onSubmit }) => {
-    const [description, setDescription] = useState('');
-    const [amount, setAmount] = useState('');
-    const [splitMethod, setSplitMethod] = useState('split_equally');
-    const [category, setCategory] = useState('Other');
+const ExpenseForm = ({ onSubmit, existingItem }) => {
+    const [description, setDescription] = useState(existingItem?.description || '');
+    const [amount, setAmount] = useState(existingItem?.amount || '');
+    const [splitMethod, setSplitMethod] = useState(existingItem?.split_method || 'split_equally');
+    const [category, setCategory] = useState(existingItem?.category || 'Other');
     const [billFile, setBillFile] = useState(null);
     const [uploading, setUploading] = useState(false);
     
@@ -690,7 +720,7 @@ const ExpenseForm = ({ onSubmit }) => {
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            <h3 className="text-xl font-bold text-center">Add Expense</h3>
+            <h3 className="text-xl font-bold text-center">{existingItem?.id ? 'Edit' : 'Add'} Expense</h3>
             
             <div>
                 <label className="block text-sm font-medium text-gray-700">Description</label>
@@ -741,7 +771,7 @@ const ExpenseForm = ({ onSubmit }) => {
             </div>
 
             <button type="submit" disabled={uploading} className="w-full bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 font-bold disabled:bg-green-400">
-                {uploading ? 'Uploading...' : 'Add Expense'}
+                {uploading ? 'Saving...' : 'Save Expense'}
             </button>
         </form>
     );
