@@ -21,7 +21,7 @@ const Spinner = () => (
 
 // --- Main Feature Components ---
 
-const TripList = ({ setView, setSelectedTripId, userId }) => {
+const TripList = ({ setView, setSelectedTripId, setEditingTrip, userId }) => {
     const [trips, setTrips] = useState([]);
     const [loading, setLoading] = useState(true);
     const [joinId, setJoinId] = useState('');
@@ -83,6 +83,15 @@ const TripList = ({ setView, setSelectedTripId, userId }) => {
         }
     };
 
+    const handleDeleteTrip = async (tripId) => {
+        if (window.confirm("Are you sure you want to permanently delete this trip and all its data?")) {
+            const { error } = await supabase.from('trips').delete().eq('id', tripId);
+            if (error) {
+                alert(`Error deleting trip: ${error.message}`);
+            }
+        }
+    };
+
     return (
         <div className="bg-white/80 backdrop-blur-md p-4 md:p-8 rounded-lg shadow-lg">
             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
@@ -105,12 +114,20 @@ const TripList = ({ setView, setSelectedTripId, userId }) => {
             {loading ? <Spinner /> : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {trips.length > 0 ? trips.map(trip => (
-                        <div key={trip.id} onClick={() => handleSelectTrip(trip.id)} className="bg-white p-6 rounded-xl shadow-lg cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                            <h3 className="text-xl font-bold text-gray-900">{trip.title}</h3>
-                            <p className="text-gray-600">{trip.destination}</p>
-                            {trip.pact_amount && (
-                                <div className="mt-4 pt-4 border-t border-gray-200">
-                                    <p className="text-sm font-bold text-indigo-600">Pact: ₹{trip.pact_amount}</p>
+                        <div key={trip.id} className="bg-white p-6 rounded-xl shadow-lg group relative">
+                            <div onClick={() => handleSelectTrip(trip.id)} className="cursor-pointer">
+                                <h3 className="text-xl font-bold text-gray-900">{trip.title}</h3>
+                                <p className="text-gray-600">{trip.destination}</p>
+                                {trip.pact_amount && (
+                                    <div className="mt-4 pt-4 border-t border-gray-200">
+                                        <p className="text-sm font-bold text-indigo-600">Pact: ₹{trip.pact_amount}</p>
+                                    </div>
+                                )}
+                            </div>
+                            {trip.creator_id === userId && (
+                                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={(e) => { e.stopPropagation(); setEditingTrip(trip); }} className="text-blue-500 hover:text-blue-700">✏️</button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteTrip(trip.id); }} className="text-red-500 hover:text-red-700">🗑️</button>
                                 </div>
                             )}
                         </div>
@@ -125,39 +142,42 @@ const TripList = ({ setView, setSelectedTripId, userId }) => {
     );
 };
 
-const CreateTrip = ({ setView, userId }) => {
-    const [title, setTitle] = useState('');
-    const [destination, setDestination] = useState('');
-    const [pactAmount, setPactAmount] = useState('');
-    const [isCreating, setIsCreating] = useState(false);
+const TripForm = ({ setView, userId, existingTrip }) => {
+    const [title, setTitle] = useState(existingTrip?.title || '');
+    const [destination, setDestination] = useState(existingTrip?.destination || '');
+    const [pactAmount, setPactAmount] = useState(existingTrip?.pact_amount || '');
+    const [isSaving, setIsSaving] = useState(false);
+    const isEditMode = !!existingTrip;
 
-    const handleCreateTrip = async (e) => {
+    const handleSaveTrip = async (e) => {
         e.preventDefault();
         if (!title.trim() || !destination.trim() || !userId) return;
 
-        setIsCreating(true);
-        const { error } = await supabase
-            .from('trips')
-            .insert([{ 
-                title,
-                destination, 
-                pact_amount: pactAmount || null,
-                creator_id: userId,
-                members: [userId]
-            }]);
+        setIsSaving(true);
+        const tripData = {
+            title,
+            destination,
+            pact_amount: pactAmount || null,
+            creator_id: userId,
+            members: existingTrip?.members || [userId]
+        };
 
-        if (error) {
-            console.error("Error creating trip: ", error);
+        if (isEditMode) {
+            const { error } = await supabase.from('trips').update(tripData).eq('id', existingTrip.id);
+            if (error) console.error("Error updating trip:", error);
         } else {
-            setView('tripList');
+            const { error } = await supabase.from('trips').insert([tripData]);
+            if (error) console.error("Error creating trip:", error);
         }
-        setIsCreating(false);
+        
+        setIsSaving(false);
+        setView('tripList');
     };
 
     return (
         <div className="bg-white/80 backdrop-blur-md p-4 md:p-8 rounded-lg shadow-lg max-w-2xl mx-auto">
-            <h2 className="text-3xl font-bold text-gray-800 mb-6">Create a New Trip</h2>
-            <form onSubmit={handleCreateTrip} className="space-y-6">
+            <h2 className="text-3xl font-bold text-gray-800 mb-6">{isEditMode ? 'Edit Trip' : 'Create a New Trip'}</h2>
+            <form onSubmit={handleSaveTrip} className="space-y-6">
                 <div>
                     <label htmlFor="trip-title" className="block text-sm font-medium text-gray-700 mb-1">Trip Title</label>
                     <input id="trip-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Rishikesh Adventure" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" required />
@@ -183,8 +203,8 @@ const CreateTrip = ({ setView, userId }) => {
                      <button type="button" onClick={() => setView('tripList')} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition duration-300">
                         Cancel
                     </button>
-                    <button type="submit" disabled={isCreating} className="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 disabled:bg-indigo-300">
-                        {isCreating ? 'Creating...' : 'Create Trip'}
+                    <button type="submit" disabled={isSaving} className="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 disabled:bg-indigo-300">
+                        {isSaving ? 'Saving...' : (isEditMode ? 'Save Changes' : 'Create Trip')}
                     </button>
                 </div>
             </form>
@@ -841,6 +861,7 @@ const BudgetForm = ({ tripId, existingBudgets, onClose }) => {
 export default function MyTrips() {
     const [view, setView] = useState('tripList'); 
     const [selectedTripId, setSelectedTripId] = useState(null);
+    const [editingTrip, setEditingTrip] = useState(null);
     const [session, setSession] = useState(null);
 
     useEffect(() => {
@@ -860,14 +881,19 @@ export default function MyTrips() {
     if (!userId) {
         return <Spinner />;
     }
+    
+    if (editingTrip) {
+        return <TripForm setView={() => setEditingTrip(null)} userId={userId} existingTrip={editingTrip} />;
+    }
 
     switch (view) {
         case 'createTrip':
-            return <CreateTrip setView={setView} userId={userId} />;
+            return <TripForm setView={setView} userId={userId} />;
         case 'tripDetail':
             return <TripDetail tripId={selectedTripId} setView={setView} userId={userId} />;
         case 'tripList':
         default:
-            return <TripList setView={setView} setSelectedTripId={setSelectedTripId} userId={userId} />;
+            return <TripList setView={setView} setSelectedTripId={setSelectedTripId} setEditingTrip={setEditingTrip} userId={userId} />;
     }
 }
+
