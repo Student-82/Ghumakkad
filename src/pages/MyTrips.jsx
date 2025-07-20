@@ -208,11 +208,15 @@ const TripDetail = ({ tripId, setView, userId }) => {
 
     useEffect(() => {
         if (!tripId) return;
-        setLoading(true);
-
+        
         const fetchAllData = async () => {
+            setLoading(true);
             const { data: tripData, error: tripError } = await supabase.from('trips').select('*').eq('id', tripId).single();
-            if (tripError) { setLoading(false); return; }
+            if (tripError) { 
+                console.error("Error fetching trip:", tripError.message);
+                setLoading(false); 
+                return; 
+            }
             setTrip(tripData);
 
             const [itineraryRes, expensesRes, transactionsRes, profilesRes, budgetsRes] = await Promise.all([
@@ -230,6 +234,7 @@ const TripDetail = ({ tripId, setView, userId }) => {
             setBudgets(budgetsRes.data || []);
             setLoading(false);
         };
+        
         fetchAllData();
 
         const channel = supabase.channel(`trip-details-${tripId}`)
@@ -303,6 +308,9 @@ const TripDetail = ({ tripId, setView, userId }) => {
     const pledgedUserIds = transactions.filter(t => t.transaction_type === 'pledge').map(t => t.user_id);
     const totalPledged = transactions.filter(t => t.transaction_type === 'pledge').reduce((sum, t) => sum + t.amount, 0);
     const totalExpenses = expenses.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+    
+    // FIXED: Safe getter for profile info
+    const getProfile = (id) => memberProfiles.find(p => p.id === id);
 
     return (
         <div className="bg-white/80 backdrop-blur-md p-4 md:p-8 rounded-lg shadow-lg">
@@ -337,7 +345,7 @@ const TripDetail = ({ tripId, setView, userId }) => {
                         <p className="text-sm font-bold text-gray-500 mb-2">MEMBERS</p>
                         <ul className="space-y-2">
                             {trip.members.map(memberId => {
-                                const profile = memberProfiles.find(p => p.id === memberId);
+                                const profile = getProfile(memberId);
                                 const email = profile ? profile.email : `User...${memberId.slice(-6)}`;
                                 const hasPledged = pledgedUserIds.includes(memberId);
 
@@ -436,7 +444,7 @@ const TripDetail = ({ tripId, setView, userId }) => {
                                 <div>
                                     <p className="font-semibold text-gray-800">{item.description}</p>
                                     <div className="flex items-center gap-2 mt-1">
-                                        <p className="text-xs text-gray-500">Paid by: {memberProfiles.find(p => p.id === item.paid_by)?.email.split('@')[0] || '...'}
+                                        <p className="text-xs text-gray-500">Paid by: {getProfile(item.paid_by)?.email?.split('@')[0] || '...'}
                                         </p>
                                         <span className="text-xs font-bold text-indigo-700">
                                             {item.split_method === 'you_are_owed' ? '• You are Owed' : '• Split Equally'}
@@ -490,6 +498,8 @@ const TripDetail = ({ tripId, setView, userId }) => {
 };
 
 const SettlementCalculator = ({ expenses, pledgedUserIds, memberProfiles, tripName }) => {
+    const getProfile = (userId) => memberProfiles.find(p => p.id === userId);
+
     const settlement = useMemo(() => {
         const balances = {};
         const participatingMembers = memberProfiles.filter(p => pledgedUserIds.includes(p.id));
@@ -536,8 +546,6 @@ const SettlementCalculator = ({ expenses, pledgedUserIds, memberProfiles, tripNa
         return { balances, transactions };
     }, [expenses, pledgedUserIds, memberProfiles]);
 
-    const getProfile = (userId) => memberProfiles.find(p => p.id === userId) || {};
-
     return (
         <div>
             <h3 className="text-2xl font-bold text-center mb-4">Trip Settlement</h3>
@@ -546,7 +554,7 @@ const SettlementCalculator = ({ expenses, pledgedUserIds, memberProfiles, tripNa
                 <ul className="space-y-2">
                     {Object.entries(settlement.balances).map(([userId, balance]) => (
                         <li key={userId} className="flex justify-between items-center text-sm">
-                            <span>{getProfile(userId).email}</span>
+                            <span>{getProfile(userId)?.email || `User...${userId.slice(-6)}`}</span>
                             {balance < 0 ? (
                                 <span className="font-bold text-red-600">Owes ₹{(-balance).toFixed(2)}</span>
                             ) : (
@@ -563,18 +571,19 @@ const SettlementCalculator = ({ expenses, pledgedUserIds, memberProfiles, tripNa
                     <ul className="space-y-3">
                         {settlement.transactions.map((t, i) => {
                             const toProfile = getProfile(t.to);
-                            const upiLink = `upi://pay?pa=${toProfile.upi_id}&pn=${toProfile.email.split('@')[0]}&am=${t.amount.toFixed(2)}&tn=Ghumakkad Trip: ${tripName}`;
+                            const fromProfile = getProfile(t.from);
+                            const upiLink = `upi://pay?pa=${toProfile?.upi_id}&pn=${toProfile?.email?.split('@')[0]}&am=${t.amount.toFixed(2)}&tn=Ghumakkad Trip: ${tripName}`;
                             
                             return (
                                 <li key={i} className="bg-indigo-50 p-3 rounded-lg text-center">
                                     <p>
-                                        <span className="font-bold text-red-600">{getProfile(t.from).email}</span>
+                                        <span className="font-bold text-red-600">{fromProfile?.email || 'A member'}</span>
                                         {' '}should pay{' '}
-                                        <span className="font-bold text-green-600">{getProfile(t.to).email}</span>
+                                        <span className="font-bold text-green-600">{toProfile?.email || 'a member'}</span>
                                         {' '}a total of{' '}
                                         <span className="font-bold text-indigo-800">₹{t.amount.toFixed(2)}</span>
                                     </p>
-                                    {toProfile.upi_id && (
+                                    {toProfile?.upi_id && (
                                         <a 
                                             href={upiLink}
                                             className="mt-2 inline-block bg-blue-500 text-white font-bold py-1 px-3 text-sm rounded-full hover:bg-blue-600"
@@ -596,7 +605,7 @@ const SettlementCalculator = ({ expenses, pledgedUserIds, memberProfiles, tripNa
 
 
 const ExpenseFeed = ({ expenses, memberProfiles }) => {
-    const getProfile = (userId) => memberProfiles.find(p => p.id === userId) || {};
+    const getProfile = (userId) => memberProfiles.find(p => p.id === userId);
 
     const categoryIcons = {
         'Food': '🍔',
@@ -617,7 +626,7 @@ const ExpenseFeed = ({ expenses, memberProfiles }) => {
                             <div className="text-2xl">{categoryIcons[expense.category] || '🛍️'}</div>
                             <div>
                                 <p className="text-sm text-gray-800">
-                                    <span className="font-bold">{profile.email ? profile.email.split('@')[0] : 'Someone'}</span>
+                                    <span className="font-bold">{profile?.email?.split('@')[0] || 'A member'}</span>
                                     {' '}added an expense for{' '}
                                     <span className="font-bold">{expense.description}</span>.
                                 </p>
